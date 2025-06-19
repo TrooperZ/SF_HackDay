@@ -688,22 +688,27 @@ function getClosestRoom(playerPos: [number, number, number]) {
   return closest;
 }
 
-function RoomDialog({ room, onClose, players, myId, socketRef, name }: { room: any, onClose: () => void, players: any[], myId: string, socketRef: any, name: string }) {
+function RoomDialog({ room, onClose, players, myId, socketRef, name, onTeleport }: { room: any, onClose: () => void, players: any[], myId: string, socketRef: any, name: string, onTeleport?: (pos: [number, number, number]) => void }) {
   const [meetingName, setMeetingName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
-  const [showJoinRequest, setShowJoinRequest] = useState(false);
+  const [joinRequest, setJoinRequest] = useState<{ userId: string, user: any } | null>(null);
   const meeting = room.meeting;
   const isOwner = meeting && meeting.ownerId === myId;
   const isParticipant = meeting && meeting.participants && meeting.participants.includes(myId);
   const hasRequested = meeting && meeting.joinRequests && meeting.joinRequests.includes(myId);
+  // Knock sound
+  const knockAudioRef = useRef<HTMLAudioElement>(null);
 
   // Listen for join request (if owner)
   useEffect(() => {
     if (!socketRef.current) return;
-    function onJoinRequest({ roomName, userId, user }: any) {
+    function onJoinRequest({ roomName, userId, user }: { roomName: string, userId: string, user: any }) {
       if (roomName === room.name) {
-        console.log('knock knock');
-        setShowJoinRequest({ userId, user });
+        setJoinRequest({ userId, user });
+        if (knockAudioRef.current) {
+          knockAudioRef.current.currentTime = 0;
+          knockAudioRef.current.play();
+        }
       }
     }
     socketRef.current.on('join-request', onJoinRequest);
@@ -713,15 +718,45 @@ function RoomDialog({ room, onClose, players, myId, socketRef, name }: { room: a
   // Listen for join-approved (if participant)
   useEffect(() => {
     if (!socketRef.current) return;
-    function onJoinApproved({ roomName }) {
-      if (roomName === room.name) {
+    function onJoinApproved({ roomName }: { roomName: string }) {
+      if (roomName === room.name && onTeleport) {
         // Teleport inside: set position to room center
-        // (You may want to update player position here)
+        const center = room.center || [0, 0, 0];
+        onTeleport([center[0], 0.5, center[2]]);
       }
     }
     socketRef.current.on('join-approved', onJoinApproved);
     return () => socketRef.current.off('join-approved', onJoinApproved);
-  }, [room.name, socketRef]);
+  }, [room.name, socketRef, onTeleport, room.center]);
+
+  // Listen for end-meeting (if participant)
+  useEffect(() => {
+    if (!socketRef.current) return;
+    function onEndMeeting({ roomName }: { roomName: string }) {
+      if (roomName === room.name && onTeleport) {
+        // Teleport outside: set position to just outside entrance
+        const entrance = room.entrance || [0, 0, 0];
+        const out = [entrance[0], 0.5, entrance[2] + 2];
+        onTeleport(out as [number, number, number]);
+      }
+    }
+    socketRef.current.on('end-meeting', onEndMeeting);
+    return () => socketRef.current.off('end-meeting', onEndMeeting);
+  }, [room.name, socketRef, onTeleport, room.entrance]);
+
+  // Listen for leave-meeting (self)
+  useEffect(() => {
+    if (!socketRef.current) return;
+    function onLeaveMeeting({ roomName, userId }: { roomName: string, userId: string }) {
+      if (roomName === room.name && userId === myId && onTeleport) {
+        const entrance = room.entrance || [0, 0, 0];
+        const out = [entrance[0], 0.5, entrance[2] + 2];
+        onTeleport(out as [number, number, number]);
+      }
+    }
+    socketRef.current.on('leave-meeting', onLeaveMeeting);
+    return () => socketRef.current.off('leave-meeting', onLeaveMeeting);
+  }, [room.name, socketRef, onTeleport, room.entrance, myId]);
 
   // Meeting creation form
   if (!meeting && room.type === 'meeting') {
@@ -737,6 +772,25 @@ function RoomDialog({ room, onClose, players, myId, socketRef, name }: { room: a
           <button type="submit" style={{ fontSize: 20, padding: '8px 16px', borderRadius: 6, marginTop: 8 }}>Start Meeting</button>
         </form>
         <button style={{ position: 'absolute', top: 8, right: 12, fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }} onClick={onClose}>×</button>
+        {/* Knock sound audio element */}
+        <audio ref={knockAudioRef} src="https://cdn.pixabay.com/audio/2022/07/26/audio_124bfae3c7.mp3" preload="auto" />
+      </div>
+    );
+  }
+
+  // Break room dialog customization
+  if (room.type === 'break') {
+    const mockNames = ['Alice', 'Bob', 'Charlie', 'Dana', 'Eve', 'Frank', 'Grace'];
+    return (
+      <div style={{ position: 'fixed', left: '50%', top: 80, transform: 'translateX(-50%)', background: '#fff', borderRadius: 12, boxShadow: '0 4px 24px #0002', padding: 32, minWidth: 340, zIndex: 2000 }}>
+        <h2 style={{ margin: 0, fontSize: 32, fontWeight: 700 }}>{room.name}</h2>
+        <div style={{ margin: '12px 0 8px 0', fontWeight: 500 }}>Who's in the break room?</div>
+        <div style={{ display: 'flex', flexDirection: 'row', gap: 16, overflowX: 'auto', marginBottom: 12 }}>
+          {mockNames.map((n, i) => (
+            <div key={n} style={{ background: '#f0f0f0', borderRadius: 8, padding: '8px 18px', fontWeight: 600, fontSize: 18 }}>{n}</div>
+          ))}
+        </div>
+        <button style={{ position: 'absolute', top: 8, right: 12, fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }} onClick={onClose}>×</button>
       </div>
     );
   }
@@ -747,23 +801,18 @@ function RoomDialog({ room, onClose, players, myId, socketRef, name }: { room: a
       <div style={{ position: 'fixed', left: '50%', top: 80, transform: 'translateX(-50%)', background: '#fff', borderRadius: 12, boxShadow: '0 4px 24px #0002', padding: 32, minWidth: 340, zIndex: 2000 }}>
         <h2 style={{ margin: 0, fontSize: 32, fontWeight: 700 }}>{room.name}</h2>
         <div style={{ margin: '12px 0 4px 0', fontWeight: 500 }}>Meeting: {meeting.name}</div>
-        <div style={{ marginBottom: 4 }}>Participants: {meeting.participants?.map(id => players.find(p => p.id === id)?.name || id).join(', ')}</div>
+        <div style={{ marginBottom: 4 }}>Participants: {(meeting.participants as string[]).map((id: string) => players.find((p: any) => p.id === id)?.name || id).join(', ')}</div>
         <div style={{ marginBottom: 12 }}>Private: {meeting.isPrivate ? 'Yes' : 'No'}</div>
         {isOwner && (
           <>
             <button onClick={() => socketRef.current.emit('end-meeting', { roomName: room.name })} style={{ fontSize: 18, padding: '6px 18px', borderRadius: 6, marginRight: 8 }}>End Meeting</button>
             <button onClick={() => socketRef.current.emit('update-meeting', { roomName: room.name, meetingName: meeting.name, isPrivate: !meeting.isPrivate })} style={{ fontSize: 18, padding: '6px 18px', borderRadius: 6 }}>{meeting.isPrivate ? 'Make Public' : 'Make Private'}</button>
-            {meeting.joinRequests && meeting.joinRequests.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontWeight: 600 }}>Join Requests:</div>
-                {meeting.joinRequests.map(id => (
-                  <div key={id} style={{ display: 'flex', alignItems: 'center', marginTop: 4 }}>
-                    <span>{players.find(p => p.id === id)?.name || id}</span>
-                    <button onClick={() => socketRef.current.emit('approve-join', { roomName: room.name, userId: id })} style={{ marginLeft: 12, fontSize: 16, padding: '4px 12px', borderRadius: 6 }}>Approve</button>
-                  </div>
-                ))}
+            {meeting.joinRequests && (meeting.joinRequests as string[]).map((id: string) => (
+              <div key={id} style={{ display: 'flex', alignItems: 'center', marginTop: 4 }}>
+                <span>{players.find((p: any) => p.id === id)?.name || id}</span>
+                <button onClick={() => socketRef.current.emit('approve-join', { roomName: room.name, userId: id })} style={{ marginLeft: 12, fontSize: 16, padding: '4px 12px', borderRadius: 6 }}>Approve</button>
               </div>
-            )}
+            ))}
           </>
         )}
         {!isOwner && !isParticipant && meeting.isPrivate && !hasRequested && (
@@ -773,6 +822,8 @@ function RoomDialog({ room, onClose, players, myId, socketRef, name }: { room: a
           <button onClick={() => socketRef.current.emit('leave-meeting', { roomName: room.name })} style={{ fontSize: 18, padding: '6px 18px', borderRadius: 6, marginTop: 12 }}>Leave Meeting</button>
         )}
         <button style={{ position: 'absolute', top: 8, right: 12, fontSize: 24, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }} onClick={onClose}>×</button>
+        {/* Knock sound audio element */}
+        <audio ref={knockAudioRef} src="https://cdn.pixabay.com/audio/2022/07/26/audio_124bfae3c7.mp3" preload="auto" />
       </div>
     );
   }
@@ -793,10 +844,17 @@ function getCurrentChannel(playerPos: [number, number, number]) {
 function App() {
   const [name, setName] = useState<string | null>(null);
   const [color] = useState<string>(() => getRandomColor());
-  const playerPosition = usePlayerMovement(!name);
+  const [playerPosition, setPlayerPosition] = useState<[number, number, number]>([0, 0.5, -2]);
+  const movementPosition = usePlayerMovement(!name);
+  useEffect(() => { if (!name) setPlayerPosition([0, 0.5, -2]); }, [name]);
+  // If not teleported, follow movement
+  useEffect(() => { setPlayerPosition(movementPosition); }, [movementPosition]);
   const { players, roomsState, socketRef } = useMultiplayer(playerPosition, name, color);
   const [dialogRoom, setDialogRoom] = useState<any>(null);
   const [snappedChairId, setSnappedChairId] = useState<string | null>(null);
+  const room101x = 0;
+  const room101z = -ROOM_OFFSET;
+  const [joinRequest, setJoinRequest] = useState<{ userId: string, user: any } | null>(null);
 
   // Find my player id
   const myPlayer = players.find(p => p.name === name && p.color === color);
@@ -807,7 +865,7 @@ function App() {
   const closestRoomDef = getClosestRoom(playerPosition);
   let closestRoom = closestRoomDef;
   if (closestRoomDef && roomsState[closestRoomDef.name] && roomsState[closestRoomDef.name].meeting) {
-    closestRoom = { ...closestRoomDef, meeting: roomsState[closestRoomDef.name].meeting };
+    closestRoom = { ...closestRoomDef, meeting: roomsState[closestRoomDef.name].meeting } as typeof closestRoomDef & { meeting: any };
   }
 
   // Voice chat hook
@@ -884,10 +942,15 @@ function App() {
 
   const wallData = getDynamicWallData(roomsState, myId);
 
+  // Teleport handler for meeting events
+  const handleTeleport = (pos: [number, number, number]) => {
+    setPlayerPosition(pos);
+  };
+
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       {!name && <NameModal onSubmit={setName} />}
-      {dialogRoom && <RoomDialog room={dialogRoom} onClose={() => setDialogRoom(null)} players={players} myId={myId} socketRef={socketRef} name={name} />}
+      {dialogRoom && <RoomDialog room={dialogRoom} onClose={() => setDialogRoom(null)} players={players} myId={myId} socketRef={socketRef} name={name || ''} onTeleport={handleTeleport} />}
       {/* Mute/unmute button */}
       {name && (
         <button
