@@ -1232,6 +1232,15 @@ function Door({ position, isOpen = false }: { position: [number, number, number]
   );
 }
 
+function WelcomeDialog() {
+  return (
+    <div style={{ position: 'fixed', left: '50%', top: 80, transform: 'translateX(-50%)', background: '#fff', borderRadius: 12, boxShadow: '0 4px 24px #0002', padding: 32, minWidth: 340, zIndex: 2000, color: '#000', textAlign: 'center' }}>
+      <h2 style={{ margin: 0, fontSize: 32, fontWeight: 700, color: '#000' }}>Welcome to the Virtual Office!</h2>
+      <div style={{ marginTop: 16, fontSize: 22, color: '#e31837', fontWeight: 600 }}>Created by Amin Karic</div>
+    </div>
+  );
+}
+
 function App() {
   const [name, setName] = useState<string | null>(null);
   const [color] = useState<string>(() => getRandomColor());
@@ -1475,6 +1484,13 @@ function App() {
     effectivePlayerPosition = snappedSeat;
   }
 
+  // Show welcome dialog if player is near the revolving door (within 3 units)
+  const showWelcomeDialog = useMemo(() => {
+    const dx = playerPosition[0] - 0;
+    const dz = playerPosition[2] - (OFFICE_HALF);
+    return Math.sqrt(dx * dx + dz * dz) < 3;
+  }, [playerPosition]);
+
   return (
     <div style={{ width: '100vw', height: '100vh', color: '#000' }}>
       {!name && <NameModal onSubmit={setName} />}
@@ -1572,6 +1588,7 @@ function App() {
           Press Space to Stand
         </div>
       )}
+      {showWelcomeDialog && <WelcomeDialog />}
     </div>
   );
 }
