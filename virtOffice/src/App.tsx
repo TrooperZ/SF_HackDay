@@ -172,9 +172,30 @@ function usePlayerMovement(disabled = false, revolvingDoorOpen = false, wallData
   useEffect(() => {
     if (disabled) return;
     function handleKeyDown(e: KeyboardEvent) {
+      // Prevent movement if typing in an input, textarea, or contenteditable
+      const active = document.activeElement;
+      if (
+        active && (
+          active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          (active as HTMLElement).isContentEditable
+        )
+      ) {
+        return;
+      }
       keys.current[e.key.toLowerCase()] = true;
     }
     function handleKeyUp(e: KeyboardEvent) {
+      const active = document.activeElement;
+      if (
+        active && (
+          active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          (active as HTMLElement).isContentEditable
+        )
+      ) {
+        return;
+      }
       keys.current[e.key.toLowerCase()] = false;
     }
     window.addEventListener('keydown', handleKeyDown);
