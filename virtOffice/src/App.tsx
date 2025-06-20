@@ -747,7 +747,7 @@ function useMultiplayer(position: [number, number, number], name: string | null,
 
   useEffect(() => {
     if (!name || !color) return;
-    const socket = io('http://localhost:3001');
+    const socket = io('sfhackday-production.up.railway.app');
     socketRef.current = socket;
     socket.emit('join', { name, color, position });
     socket.on('players', (players) => setPlayers(players));
