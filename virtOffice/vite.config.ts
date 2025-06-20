@@ -5,14 +5,18 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 export default defineConfig({
   plugins: [
     react(),
+    nodePolyfills({ 
+      protocolImports: true,
+      include: ['process', 'buffer', 'events', 'util', 'stream']
+    }),
   ],
   define: {
     global: 'window',
-    process: { env: {} }
+    'process.env': {},
   },
   resolve: {
     alias: {
-      stream: 'stream-browserify',
+      stream: 'readable-stream',
       buffer: 'buffer',
       events: 'events',
       util: 'util',
@@ -25,7 +29,7 @@ export default defineConfig({
       'buffer',
       'events',
       'util',
-      'stream-browserify'
+      'readable-stream'
     ]
   }
 });

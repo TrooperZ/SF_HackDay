@@ -8,7 +8,6 @@ const io = new Server(server, {
 
 const players = {};
 const userChannels = {}; // socket.id -> channel name
-const userMuteStatus = {}; // socket.id -> boolean
 
 // --- Meeting/Room State ---
 const rooms = {
@@ -45,17 +44,30 @@ io.on('connection', (socket) => {
 
   // Join a voice channel
   socket.on('join-channel', (channel) => {
+    console.log('🎤 User', socket.id, 'joining channel:', channel);
+    // Leave previous channel room if any
+    const prevChannel = userChannels[socket.id];
+    if (prevChannel && prevChannel !== channel) {
+      socket.leave(prevChannel);
+      console.log('👋 User', socket.id, 'left channel:', prevChannel);
+    }
     userChannels[socket.id] = channel;
     socket.join(channel);
-    // Notify others in the channel
-    io.to(channel).emit('user-joined-channel', { id: socket.id, channel, mute: !!userMuteStatus[socket.id] });
+    console.log('✅ User', socket.id, 'joined channel:', channel);
+    console.log('📊 Current channels:', Object.entries(userChannels).map(([id, ch]) => `${id}: ${ch}`));
+  });
+
+  // Handle text chat messages
+  socket.on('chat-message', (message) => {
+    console.log('💬 Chat message from', socket.id, 'in channel:', message.channel);
+    // Broadcast to all users in the same channel
+    io.to(message.channel).emit('chat-message', message);
   });
 
   // Leave all channels on disconnect
   socket.on('disconnect', () => {
     delete players[socket.id];
     delete userChannels[socket.id];
-    delete userMuteStatus[socket.id];
     io.emit('players', Object.values(players));
     // Remove from all meetings
     for (const roomName in rooms) {
@@ -70,22 +82,6 @@ io.on('connection', (socket) => {
       }
     }
     broadcastRoomsState();
-  });
-
-  // WebRTC signaling
-  socket.on('signal', ({ to, data }) => {
-    if (userChannels[socket.id] && userChannels[to] && userChannels[socket.id] === userChannels[to]) {
-      io.to(to).emit('signal', { from: socket.id, data });
-    }
-  });
-
-  // Mute/unmute
-  socket.on('mute', (isMuted) => {
-    userMuteStatus[socket.id] = isMuted;
-    const channel = userChannels[socket.id];
-    if (channel) {
-      io.to(channel).emit('user-mute', { id: socket.id, mute: isMuted });
-    }
   });
 
   // --- MEETING EVENTS ---
